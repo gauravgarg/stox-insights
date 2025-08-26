@@ -226,19 +226,48 @@ class PortfolioUI:
             if price_col and "avg_price" in holdings.columns:
                 candidates = holdings[holdings[price_col] < holdings["avg_price"] * signal_rule].copy().reset_index(drop=True)
                 candidates["cmp_drop_%"] = ((candidates["avg_price"] - candidates[price_col]) / candidates["avg_price"] * 100).round(2)
-                show_cols = ["symbol", price_col, "avg_price", "cmp_drop_%", "pnl_pct", "investment"]
+                # Averaging simulation logic
+                def get_buy_qty(row):
+                    if row["cmp_drop_%"] >= 10:
+                        return row["net_qty"] * 0.5
+                    elif row["cmp_drop_%"] >= 6:
+                        return row["net_qty"] * 0.4
+                    elif row["cmp_drop_%"] >= 3:
+                        return row["net_qty"] * 0.3
+                    else:
+                        return 0
+                candidates["buy_qty"] = candidates.apply(get_buy_qty, axis=1).round(0)
+                candidates["funds_required"] = (candidates["buy_qty"] * candidates[price_col]).round(2)
+                candidates["new_qty"] = (candidates["net_qty"] + candidates["buy_qty"]).round(0)
+                candidates["new_investment"] = (candidates["investment"] + candidates["funds_required"]).round(2)
+                candidates["new_avg_price"] = candidates.apply(lambda row: round(row["new_investment"] / row["new_qty"], 2) if row["new_qty"] > 0 else row["avg_price"], axis=1)
+                show_cols = [
+                    "symbol", price_col, "avg_price", "cmp_drop_%", "net_qty", "investment", # before
+                    "buy_qty", "funds_required", "new_qty", "new_investment", "new_avg_price" # after
+                ]
+                # Color coding for new vs old columns
+                def highlight_cols(val, col):
+                    if col in ["buy_qty", "funds_required", "new_qty", "new_investment", "new_avg_price"]:
+                        return "background-color: #e6ffe6; font-weight: bold;"  # light green for new
+                    elif col in ["net_qty", "investment", "avg_price"]:
+                        return "background-color: #f0f0f0;"  # light gray for old
+                    return ""
+                def style_df(df):
+                    return df.style.apply(lambda x: [highlight_cols(x[col], col) for col in df.columns], axis=1)
+
                 st.write(f"### Averaging Candidates ({len(candidates)})")
                 if not candidates.empty:
-                    st.dataframe(candidates[show_cols], use_container_width=True)
+                    st.write(f"**Total Funds Required: ₹{candidates['funds_required'].sum():,.2f}**")
+                    st.dataframe(style_df(candidates[show_cols]), use_container_width=True)
                     # Demat-wise breakdown
                     st.write(f"#### By Demat (Total: {candidates['demat'].nunique()})")
                     for demat, group in candidates.groupby("demat"):
-                        st.write(f"**{demat} ({len(group)})**")
-                        st.dataframe(group[show_cols], use_container_width=True)
+                        st.write(f"**{demat} ({len(group)}) | Funds Required: ₹{group['funds_required'].sum():,.2f}**")
+                        st.dataframe(style_df(group[show_cols]), use_container_width=True)
                     st.write(f"#### By Strategy (Total: {candidates['strategy'].nunique()})")
                     for strategy, group in candidates.groupby("strategy"):
-                        st.write(f"**{strategy} ({len(group)})**")
-                        st.dataframe(group[show_cols], use_container_width=True)
+                        st.write(f"**{strategy} ({len(group)}) | Funds Required: ₹{group['funds_required'].sum():,.2f}**")
+                        st.dataframe(style_df(group[show_cols]), use_container_width=True)
                 else:
                     st.info("No averaging candidates found for the selected threshold.")
             elif not price_col:
