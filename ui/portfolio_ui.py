@@ -230,6 +230,15 @@ class PortfolioUI:
                 st.write(f"### Averaging Candidates ({len(candidates)})")
                 if not candidates.empty:
                     st.dataframe(candidates[show_cols], use_container_width=True)
+                    # Demat-wise breakdown
+                    st.write(f"#### By Demat (Total: {candidates['demat'].nunique()})")
+                    for demat, group in candidates.groupby("demat"):
+                        st.write(f"**{demat} ({len(group)})**")
+                        st.dataframe(group[show_cols], use_container_width=True)
+                    st.write(f"#### By Strategy (Total: {candidates['strategy'].nunique()})")
+                    for strategy, group in candidates.groupby("strategy"):
+                        st.write(f"**{strategy} ({len(group)})**")
+                        st.dataframe(group[show_cols], use_container_width=True)
                 else:
                     st.info("No averaging candidates found for the selected threshold.")
             elif not price_col:
